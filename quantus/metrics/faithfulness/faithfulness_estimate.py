@@ -37,7 +37,7 @@ class FaithfulnessEstimate(PerturbationMetric):
         similarity_func: Optional[Callable] = None,
         features_in_step: int = 1,
         abs: bool = False,
-        normalise: bool = True,
+        normalise: bool = False,
         normalise_func: Optional[Callable[[np.ndarray], np.ndarray]] = None,
         normalise_func_kwargs: Optional[Dict[str, Any]] = None,
         perturb_func: Callable = None,
@@ -288,7 +288,6 @@ class FaithfulnessEstimate(PerturbationMetric):
         att_sums = [None for _ in range(n_perturbations)]
 
         for i_ix, a_ix in enumerate(a_indices[:: self.features_in_step]):
-
             # Perturb input by indices of attributions.
             a_ix = a_indices[
                 (self.features_in_step * i_ix) : (self.features_in_step * (i_ix + 1))

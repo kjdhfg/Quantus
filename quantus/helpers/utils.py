@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional, Sequence, Tuple, Union, List
 
 import numpy as np
 from skimage.segmentation import slic, felzenszwalb
+from sklearn.cluster import KMeans
 
 from quantus.helpers import asserts
 from quantus.helpers.model.model_interface import ModelInterface
@@ -42,22 +43,25 @@ def get_superpixel_segments(img: np.ndarray, segmentation_method: str) -> np.nda
         CxWxH segmented image array.
     """
 
-    if img.ndim != 3:
-        raise ValueError(
-            "Make sure that x is 3 dimensional e.g., (3, 224, 224) to calculate super-pixels."
-            f" shape: {img.shape}"
-        )
-    if segmentation_method not in ["slic", "felzenszwalb"]:
+    # if img.ndim != 3:
+    #     raise ValueError(
+    #         "Make sure that x is 3 dimensional e.g., (3, 224, 224) to calculate super-pixels."
+    #         f" shape: {img.shape}"
+    #     )
+    if segmentation_method not in ["slic", "felzenszwalb", "knn"]:
         raise ValueError(
             "'segmentation_method' must be either 'slic' or 'felzenszwalb'."
         )
 
     if segmentation_method == "slic":
-        return slic(img, start_label=0)
+        return slic(img, start_label=0, channel_axis=0)
     elif segmentation_method == "felzenszwalb":
         return felzenszwalb(
             img,
         )
+    elif segmentation_method == "knn":
+        model = KMeans(n_clusters=16)
+        return model.fit(np.moveaxis(img,0,1)).predict(np.moveaxis(img,0,1))
 
 
 def get_baseline_value(
@@ -269,7 +273,7 @@ def infer_channel_first(x: np.array) -> bool:
     elif len(np.shape(x)) == 4:
         if np.shape(x)[-1] < np.shape(x)[-2] and np.shape(x)[-1] < np.shape(x)[-3]:
             return False
-        if np.shape(x)[-3] < np.shape(x)[-1] and np.shape(x)[-3] < np.shape(x)[-2]:
+        if np.shape(x)[-3] <= np.shape(x)[-1] and np.shape(x)[-3] <= np.shape(x)[-2]:
             return True
         raise ValueError(err_msg)
 
@@ -764,7 +768,6 @@ def infer_attribution_axes(a_batch: np.ndarray, x_batch: np.ndarray) -> Sequence
         for start in range(0, len(x_shape) - len(a_shape) + 1)
     ]
     if x_subshapes.count(a_shape) < 1:
-
         # Check that attribution dimensions are (consecutive) subdimensions of inputs
         raise ValueError(
             "Attribution dimensions are not (consecutive) subdimensions of inputs:  "
@@ -773,7 +776,6 @@ def infer_attribution_axes(a_batch: np.ndarray, x_batch: np.ndarray) -> Sequence
             )
         )
     elif x_subshapes.count(a_shape) > 1:
-
         # Check that attribution dimensions are (unique) subdimensions of inputs.
         # Consider potentially expanded dims in attributions.
 
@@ -783,7 +785,6 @@ def infer_attribution_axes(a_batch: np.ndarray, x_batch: np.ndarray) -> Sequence
                 for start in range(0, len(np.shape(a_batch)[1:]) - len(a_shape) + 1)
             ]
             if a_subshapes.count(a_shape) == 1:
-
                 # Inferring channel shape.
                 for dim in range(len(np.shape(a_batch)[1:]) + 1):
                     if a_shape == np.shape(a_batch)[1:][dim:]:
@@ -974,6 +975,7 @@ def offset_coordinates(
 
     valid = ~((x < 0) | (y < 0) | (x >= img_shape[1]) | (y >= img_shape[2]))
     off_coords = indices + offset[0] * img_shape[2] + offset[1]
+
 
     return off_coords[valid], valid
 

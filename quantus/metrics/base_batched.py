@@ -206,11 +206,10 @@ class BatchedMetric(Metric):
             device=device,
         )
 
+        self.device = device
+
         # Create generator for generating batches.
-        batch_generator = self.generate_batches(
-            data=data,
-            batch_size=batch_size,
-        )
+        batch_generator = self.generate_batches(data=data, batch_size=batch_size,)
 
         self.last_results = []
         for data_batch in batch_generator:
@@ -278,9 +277,7 @@ class BatchedMetric(Metric):
         return math.ceil(n_instances / batch_size)
 
     def generate_batches(
-        self,
-        data: Dict[str, Any],
-        batch_size: int,
+        self, data: Dict[str, Any], batch_size: int,
     ):
         """
         Creates iterator to iterate over all batched instances in data dictionary.
@@ -342,9 +339,7 @@ class BatchedMetric(Metric):
 
         # Create iterator for batch index.
         iterator = tqdm(
-            range(0, n_batches),
-            total=n_batches,
-            disable=not self.display_progressbar,
+            range(0, n_batches), total=n_batches, disable=not self.display_progressbar,
         )
 
         # Iterate over batch index

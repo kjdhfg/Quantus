@@ -380,25 +380,50 @@ def translation_x_direction(
          The array which some of its indices have been perturbed.
     """
 
-    if arr.ndim != 3:
-        raise ValueError(
-            "perturb func 'translation_x_direction' requires image-type data."
-            "Check that this perturb_func receives a 3D array."
-        )
-
     matrix = np.float32([[1, 0, perturb_dx], [0, 1, 0]])
-    arr_perturbed = cv2.warpAffine(
-        np.moveaxis(arr, 0, -1),
-        matrix,
-        (arr.shape[1], arr.shape[2]),
-        borderValue=get_baseline_value(
-            value=perturb_baseline,
-            arr=arr,
-            return_shape=(arr.shape[0]),
-            **kwargs,
-        ),
-    )
-    arr_perturbed = np.moveaxis(arr_perturbed, -1, 0)
+
+    if arr.shape[0] <= 3 and len(arr.shape) > 2:
+        arr_perturbed = cv2.warpAffine(
+            np.moveaxis(arr, 0, -1),
+            matrix,
+            (arr.shape[1], arr.shape[2]),
+            borderValue=get_baseline_value(
+                value=perturb_baseline,
+                arr=arr,
+                return_shape=(arr.shape[0]),
+                **kwargs,
+            ),
+        )
+        arr_perturbed = np.moveaxis(arr_perturbed, -1, 0)
+    elif len(arr.shape) == 2:
+        arr_perturbed = arr.T + np.array(
+            [2 * (perturb_dx / kwargs["dx_max"]), 0, 0],
+            dtype="float32",
+        )
+        arr_perturbed = arr_perturbed.T
+
+        for i in range(arr_perturbed.shape[1]):
+            if np.any(arr_perturbed[:, i] > 1):
+                arr_perturbed[:, i] = 0
+            if np.any(arr_perturbed[:, i] < -1):
+                arr_perturbed[:, i] = 0
+    else:
+        arr_perturbed = np.zeros_like(arr)
+        for i in range(arr.shape[0]):
+            arr_2D = np.expand_dims(arr[i], 0)
+            arr_perturbed[i, :] = cv2.warpAffine(
+                np.moveaxis(arr_2D, 0, -1),
+                matrix,
+                (arr_2D.shape[1], arr_2D.shape[2]),
+                borderValue=get_baseline_value(
+                    value=perturb_baseline,
+                    arr=arr_2D,
+                    return_shape=(arr_2D.shape[0]),
+                    **kwargs,
+                ),
+            )
+            arr_perturbed[i, :] = np.moveaxis(arr_perturbed[i, :], -1, 0)
+
     return arr_perturbed
 
 
@@ -490,7 +515,11 @@ def noisy_linear_imputation(
         ((1, 0), 1 / 6),
         ((-1, 0), 1 / 6),
     ]
-    arr_flat = arr.reshape((arr.shape[0], -1))
+
+    if arr.shape[0] <= 3:
+        arr_flat = arr.reshape((arr.shape[0], -1))
+    else:
+        arr_flat = arr.reshape((1, -1))
 
     mask = np.ones(arr_flat.shape[1])
     mask[indices] = 0
@@ -502,7 +531,10 @@ def noisy_linear_imputation(
     a = lil_matrix((len(indices), len(indices)))
 
     # Equation system right-hand side.
-    b = np.zeros((len(indices), arr.shape[0]))
+    if arr.shape[0] <= 3:
+        b = np.zeros((len(indices), arr.shape[0]))
+    else:
+        b = np.zeros((len(indices), 1))
 
     sum_neighbors = np.ones(len(indices))
 
@@ -533,7 +565,11 @@ def noisy_linear_imputation(
     res = np.transpose(spsolve(csc_matrix(a), b))
 
     # Fill the values with the solution of the system.
-    arr_flat_copy = np.copy(arr.reshape((arr.shape[0], -1)))
+    if arr.shape[0] <= 3:
+        arr_flat_copy = np.copy(arr.reshape((arr.shape[0], -1)))
+    else:
+        arr_flat_copy = np.copy(arr.reshape((1, -1)))
+
     arr_flat_copy[:, indices] = res + noise * np.random.randn(*res.shape)
 
     return arr_flat_copy.reshape(*arr.shape)

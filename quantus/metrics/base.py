@@ -354,7 +354,6 @@ class Metric:
 
         # Wrap the model into an interface.
         if model:
-
             # Use attribute value if not passed explicitly.
             model = utils.get_wrapped_model(
                 model=model,
@@ -371,11 +370,10 @@ class Metric:
         self.explain_func_kwargs = explain_func_kwargs
 
         # Include device in explain_func_kwargs.
-        if device is not None and "device" not in self.explain_func_kwargs:
-            self.explain_func_kwargs["device"] = device
+        # if device is not None and "device" not in self.explain_func_kwargs:
+        #     self.explain_func_kwargs["device"] = device
 
         if a_batch is None:
-
             # Asserts.
             asserts.assert_explain_func(explain_func=self.explain_func)
 
@@ -611,7 +609,7 @@ class Metric:
                 data[key] = [value for _ in range(n_instances)]
 
             # If data-value is a sequence and ends with '_batch', only check for correct length.
-            elif key.endswith("_batch"):
+            elif key.endswith("_batch") and key != "custom_batch":
                 if len(value) != n_instances:
                     # Sequence has to have correct length.
                     raise ValueError(

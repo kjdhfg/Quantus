@@ -46,7 +46,7 @@ def normalise_by_max(
     normalise_axes = tuple(normalise_axes)
 
     a_max = np.max(np.abs(a), axis=normalise_axes, keepdims=True)
-    a = np.divide(a, a_max)
+    a = np.divide(a, a_max + 0.0000000000001)
     return a
 
 

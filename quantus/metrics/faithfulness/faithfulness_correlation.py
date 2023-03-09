@@ -49,7 +49,7 @@ class FaithfulnessCorrelation(PerturbationMetric):
         nr_runs: int = 100,
         subset_size: int = 224,
         abs: bool = False,
-        normalise: bool = True,
+        normalise: bool = False,
         normalise_func: Optional[Callable[[np.ndarray], np.ndarray]] = None,
         normalise_func_kwargs: Optional[Dict[str, Any]] = None,
         perturb_func: Callable = None,
@@ -300,7 +300,6 @@ class FaithfulnessCorrelation(PerturbationMetric):
 
         # For each test data point, execute a couple of runs.
         for i_ix in range(self.nr_runs):
-
             # Randomly mask by subset size.
             a_ix = np.random.choice(a.shape[0], self.subset_size, replace=False)
             x_perturbed = self.perturb_func(

@@ -8,6 +8,7 @@
 
 from typing import Any, Callable, Dict, List, Optional
 import numpy as np
+import torch
 
 from quantus.helpers import asserts
 from quantus.functions import norm_func
@@ -301,7 +302,6 @@ class MaxSensitivity(BatchedPerturbationMetric):
         similarities = np.zeros((batch_size, self.nr_samples)) * np.nan
 
         for step_id in range(self.nr_samples):
-
             # Perturb input.
             x_perturbed = perturb_batch(
                 perturb_func=self.perturb_func,
@@ -335,11 +335,15 @@ class MaxSensitivity(BatchedPerturbationMetric):
 
             # Generate explanation based on perturbed input x.
             a_perturbed = self.explain_func(
-                model=model.get_model(),
-                inputs=x_input,
-                targets=y_batch,
+                inputs=torch.tensor(x_input).to(self.device)
+                if x_input.shape[1] <= 3
+                else torch.tensor(x_input).unsqueeze(1).to(self.device),
+                target=torch.tensor(y_batch).to(self.device),
                 **self.explain_func_kwargs,
             )
+
+            if torch.is_tensor(a_perturbed):
+                a_perturbed = a_perturbed.cpu().detach().numpy()
 
             if self.normalise:
                 a_perturbed = self.normalise_func(
@@ -404,4 +408,4 @@ class MaxSensitivity(BatchedPerturbationMetric):
         """
         # Additional explain_func assert, as the one in prepare() won't be
         # executed when a_batch != None.
-        asserts.assert_explain_func(explain_func=self.explain_func)
+        # asserts.assert_explain_func(explain_func=self.explain_func)

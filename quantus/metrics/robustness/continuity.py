@@ -9,6 +9,7 @@
 import itertools
 from typing import Any, Callable, Dict, List, Optional
 import numpy as np
+import torch
 
 from quantus.helpers import asserts
 from quantus.helpers import utils
@@ -16,7 +17,7 @@ from quantus.helpers import warn
 from quantus.helpers.model.model_interface import ModelInterface
 from quantus.functions.normalise_func import normalise_by_max
 from quantus.functions.perturb_func import translation_x_direction
-from quantus.functions.similarity_func import lipschitz_constant
+from quantus.functions.similarity_func import lipschitz_constant, correlation_pearson
 from quantus.metrics.base import PerturbationMetric
 
 
@@ -46,6 +47,7 @@ class Continuity(PerturbationMetric):
         nr_steps: int = 28,
         patch_size: int = 7,
         abs: bool = True,
+        modality="Image",
         normalise: bool = True,
         normalise_func: Optional[Callable[[np.ndarray], np.ndarray]] = None,
         normalise_func_kwargs: Optional[Dict[str, Any]] = None,
@@ -104,6 +106,7 @@ class Continuity(PerturbationMetric):
         kwargs: optional
             Keyword arguments.
         """
+        self.modality = modality
         if normalise_func is None:
             normalise_func = normalise_by_max
 
@@ -131,7 +134,7 @@ class Continuity(PerturbationMetric):
 
         # Save metric-specific attributes.
         if similarity_func is None:
-            similarity_func = lipschitz_constant
+            similarity_func = correlation_pearson
         self.similarity_func = similarity_func
         self.patch_size = patch_size
         self.nr_steps = nr_steps
@@ -249,6 +252,7 @@ class Continuity(PerturbationMetric):
             >> metric = Metric(abs=True, normalise=False)
             >> scores = metric(model=model, x_batch=x_batch, y_batch=y_batch, a_batch=a_batch_saliency}
         """
+        self.device = device
         return super().__call__(
             model=model,
             x_batch=x_batch,
@@ -294,10 +298,12 @@ class Continuity(PerturbationMetric):
         dict
             The evaluation results.
         """
-        results: Dict[int, list] = {k: [] for k in range(self.nr_patches + 1)}
+
+        results: Dict[int, list] = {k: [] for k in range((self.nr_patches) + 1)}
+
+        dx_max = self.dx * self.nr_steps
 
         for step in range(self.nr_steps):
-
             # Generate explanation based on perturbed input x.
             dx_step = (step + 1) * self.dx
             x_perturbed = self.perturb_func(
@@ -305,6 +311,7 @@ class Continuity(PerturbationMetric):
                 indices=np.arange(0, x.size),
                 indexed_axes=np.arange(0, x.ndim),
                 perturb_dx=dx_step,
+                dx_max=dx_max,
                 **self.perturb_func_kwargs,
             )
             x_input = model.shape_input(x_perturbed, x.shape, channel_first=True)
@@ -316,16 +323,24 @@ class Continuity(PerturbationMetric):
                 else False
             )
 
-            # Generate explanations on perturbed input.
+            # Generate explanation based on perturbed input x.
             a_perturbed = self.explain_func(
-                model=model.get_model(),
-                inputs=x_input,
-                targets=y,
+                inputs=torch.tensor(x_input).to(self.device)
+                if x_input.shape[1] <= 3
+                else torch.tensor(x_input).unsqueeze(1).to(self.device),
+                target=torch.tensor(y).to(self.device),
                 **self.explain_func_kwargs,
             )
+
+            if torch.is_tensor(a_perturbed):
+                a_perturbed = a_perturbed.cpu().detach().numpy()
+
             # Taking the first element, since a_perturbed will be expanded to a batch dimension
             # not expected by the current index management functions.
-            a_perturbed = utils.expand_attribution_channel(a_perturbed, x_input)[0]
+            if a.shape[0] <= 3:
+                a_perturbed = utils.expand_attribution_channel(a_perturbed, x_input)[0]
+            else:
+                a_perturbed = a_perturbed.squeeze()
 
             if self.normalise:
                 a_perturbed = self.normalise_func(
@@ -354,9 +369,16 @@ class Continuity(PerturbationMetric):
                     results[ix_patch].append(np.nan)
                     continue
 
+                if self.modality == "Image":
+                    patch = (x_input[0].shape[0], self.patch_size, self.patch_size)
+                elif self.modality == "Point_Cloud":
+                    patch = (self.patch_size, 1)
+                else:
+                    patch = (self.patch_size, self.patch_size, self.patch_size)
+
                 # Create slice for patch.
                 patch_slice = utils.create_patch_slice(
-                    patch_size=self.patch_size,
+                    patch_size=patch,
                     coords=top_left_coords,
                 )
 
@@ -415,19 +437,39 @@ class Continuity(PerturbationMetric):
         """
 
         # Get number of patches for input shape (ignore batch and channel dim).
-        self.nr_patches = utils.get_nr_patches(
-            patch_size=self.patch_size,
-            shape=x_batch.shape[2:],
-            overlap=True,
-        )
+        if self.modality == "Image":
+            self.nr_patches = utils.get_nr_patches(
+                patch_size=self.patch_size,
+                shape=x_batch.shape[2:],
+                overlap=True,
+            )
 
-        self.dx = np.prod(x_batch.shape[2:]) // self.nr_steps
+            self.dx = np.prod(x_batch.shape[2:]) // self.nr_steps
+            asserts.assert_patch_size(
+                patch_size=self.patch_size, shape=x_batch.shape[2:]
+            )
+        elif self.modality == "Point_Cloud":
+            self.nr_patches = utils.get_nr_patches(
+                patch_size=self.patch_size,
+                shape=x_batch.shape[1:],
+                overlap=False,
+            )
+            self.nr_patches += 1
+            self.dx = np.prod(x_batch.shape[1:]) // self.nr_steps
+            asserts.assert_patch_size(
+                patch_size=self.patch_size, shape=x_batch.shape[1:]
+            )
+        else:
+            self.nr_patches = int(x_batch.shape[1] ** 3 / self.patch_size**3)
+            self.dx = np.prod(x_batch.shape[1:]) // self.nr_steps
+            asserts.assert_patch_size(
+                patch_size=self.patch_size, shape=x_batch.shape[1:]
+            )
 
         # Asserts.
         # Additional explain_func assert, as the one in prepare() won't be
         # executed when a_batch != None.
         asserts.assert_explain_func(explain_func=self.explain_func)
-        asserts.assert_patch_size(patch_size=self.patch_size, shape=x_batch.shape[2:])
 
     @property
     def aggregated_score(self):
@@ -436,13 +478,19 @@ class Continuity(PerturbationMetric):
         relationship between change in explanation and change in function output. It can be seen as an
         quantitative interpretation of visually determining how similar f(x) and R(x1) curves are.
         """
-        return np.mean(
-            [
-                self.similarity_func(
-                    self.last_results[sample][self.nr_patches],
-                    self.last_results[sample][ix_patch],
-                )
-                for ix_patch in range(self.nr_patches)
-                for sample in self.last_results.keys()
-            ]
-        )
+        return [
+            np.mean(
+                [
+                    np.nan_to_num(
+                        self.similarity_func(
+                            self.last_results[sample][self.nr_patches],
+                            self.last_results[sample][ix_patch],
+                        )
+                    )
+                    if np.sum(np.isnan(self.last_results[sample][ix_patch])) == 0
+                    else 0
+                    for ix_patch in range(self.nr_patches)
+                ]
+            )
+            for sample in range(len(self.last_results))
+        ]

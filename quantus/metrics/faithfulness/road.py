@@ -12,9 +12,10 @@ import numpy as np
 
 from quantus.helpers import asserts
 from quantus.helpers import warn
+from quantus.helpers import utils
 from quantus.helpers.model.model_interface import ModelInterface
 from quantus.functions.normalise_func import normalise_by_max
-from quantus.functions.perturb_func import noisy_linear_imputation
+from quantus.functions.perturb_func import noisy_linear_imputation, uniform_noise
 from quantus.metrics.base import PerturbationMetric
 
 
@@ -99,6 +100,7 @@ class ROAD(PerturbationMetric):
         if perturb_func_kwargs is None:
             perturb_func_kwargs = {}
         perturb_func_kwargs["noise"] = noise
+        perturb_func_kwargs["perturb_std"] = noise
 
         super().__init__(
             abs=abs,
@@ -365,7 +367,12 @@ class ROAD(PerturbationMetric):
 
         # Calculate accuracy for every number of most important pixels removed.
 
-        self.last_results = {
-            percentage: np.mean(np.array(self.last_results)[:, p_ix])
-            for p_ix, percentage in enumerate(self.percentages)
-        }
+        # self.last_results = [
+        #     np.mean(np.array(self.last_results)[:, p_ix])
+        #     for p_ix, percentage in enumerate(self.percentages)
+        # ]
+
+    @property
+    def get_auc_score(self):
+        """Calculate the area under the curve (AUC) score for several test samples."""
+        return [utils.calculate_auc(np.array(curve)) for curve in self.last_results]

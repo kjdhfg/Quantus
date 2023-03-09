@@ -81,7 +81,14 @@ class PyTorchModel(ModelInterface):
         grad_context = torch.no_grad() if not grad else suppress()
 
         with grad_context:
-            pred = self.model(torch.Tensor(x).to(self.device), **model_predict_kwargs)
+            if x.shape[1] <= 3:
+                pred = self.model(
+                    torch.Tensor(x).to(self.device), **model_predict_kwargs
+                )
+            else:
+                pred = self.model(
+                    torch.Tensor(x).unsqueeze(1).to(self.device), **model_predict_kwargs
+                )
             if self.softmax:
                 pred = torch.nn.Softmax(dim=-1)(pred)
             if pred.requires_grad:
@@ -244,7 +251,6 @@ class PyTorchModel(ModelInterface):
             The resulting model with a shifted first layer.
         """
         with torch.no_grad():
-
             new_model = deepcopy(self.model)
 
             modules = [l for l in new_model.named_modules()]
@@ -271,7 +277,6 @@ class PyTorchModel(ModelInterface):
         layer_names: Optional[List[str]] = None,
         layer_indices: Optional[List[int]] = None,
     ) -> np.ndarray:
-
         """
         Compute the model's internal representation of input x.
         In practice, this means, executing a forward pass and then, capturing the output of layers (of interest).
@@ -349,7 +354,11 @@ class PyTorchModel(ModelInterface):
 
         # Execute forward pass.
         with torch.no_grad():
-            self.model(torch.Tensor(x).to(device))
+            self.model(
+                torch.tensor(x).to(self.device)
+                if x.shape[1] <= 3
+                else torch.tensor(x).unsqueeze(1).to(self.device)
+            )
 
         # Cleanup.
         [i.remove() for i in new_hooks]

@@ -43,6 +43,7 @@ class IROF(PerturbationMetric):
         self,
         segmentation_method: str = "slic",
         abs: bool = False,
+        modality = "Image",
         normalise: bool = True,
         normalise_func: Optional[Callable[[np.ndarray], np.ndarray]] = None,
         normalise_func_kwargs: Optional[Dict[str, Any]] = None,
@@ -91,6 +92,7 @@ class IROF(PerturbationMetric):
         kwargs: optional
             Keyword arguments.
         """
+        self.modality = modality
         if normalise_func is None:
             normalise_func = normalise_by_max
 
@@ -280,16 +282,17 @@ class IROF(PerturbationMetric):
 
         # Segment image.
         segments = utils.get_superpixel_segments(
-            img=np.moveaxis(x, 0, -1).astype("double"),
+            img= np.expand_dims(x,0).astype("double") if self.modality == "Voxel" else x.astype("double"),
             segmentation_method=self.segmentation_method,
         )
+
         nr_segments = len(np.unique(segments))
         asserts.assert_nr_segments(nr_segments=nr_segments)
 
         # Calculate average attribution of each segment.
         att_segs = np.zeros(nr_segments)
         for i, s in enumerate(range(nr_segments)):
-            att_segs[i] = np.mean(a[:, segments == s])
+            att_segs[i] = np.mean(a[segments == s])if self.modality == "Voxel" else np.mean(a[:, segments == s]) 
 
         # Sort segments based on the mean attribution (descending order).
         s_indices = np.argsort(-att_segs)
